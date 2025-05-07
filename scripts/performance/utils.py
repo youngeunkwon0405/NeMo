@@ -92,7 +92,7 @@ def slurm_executor(
 
     env_vars |= custom_env_vars
     mounts.extend(custom_mounts)
-    srun_args.extend(custom_srun_args)
+    srun_args = custom_srun_args + srun_args
 
     # add --segment flag to sbatch if job uses GB200 and goes beyond one rack.
     segment = None
@@ -247,6 +247,8 @@ def set_primary_perf_configs(
     etp_size: Optional[int] = None,
     enable_cuda_graphs: bool = False,
     use_mcore_fsdp: bool = False,
+    use_user_buffer_registration: bool = False,
+    use_sharp: bool = False,
     recompute_layers: int = 0,
     activation_offload_layers: int = 0,
     compute_dtype: str = None,
@@ -270,6 +272,8 @@ def set_primary_perf_configs(
     logging.info(f"etp_size: {etp_size}")
     logging.info(f"enable_cuda_graphs: {enable_cuda_graphs}")
     logging.info(f"use_mcore_fsdp: {use_mcore_fsdp}")
+    logging.info(f"use_user_buffer_registration: {use_user_buffer_registration}")
+    logging.info(f"use_sharp: {use_sharp}")
     logging.info(f"recompute_layers: {recompute_layers}")
     logging.info(f"activation_offload_layers: {activation_offload_layers}")
     logging.info(f"compute_dtype: {compute_dtype}")
@@ -347,6 +351,18 @@ def set_primary_perf_configs(
                     "A fix is in progress. Disabling TP overlap."
                 )
                 recipe.trainer.callbacks[comm_overlap_callback_idx].tp_comm_overlap = False
+
+    # User buffers configs
+    if use_user_buffer_registration:
+        logging.info("Enabling user buffer registration")
+        recipe.trainer.strategy.ddp.nccl_ub = True
+        if use_mcore_fsdp:
+            recipe.trainer.strategy.ddp.fsdp_double_buffer = True
+    
+    # Sharp configs
+    if use_sharp:
+        logging.info("Enabling sharp")
+        recipe.trainer.strategy.use_sharp = True
 
     # Recompute configs
     if recompute_layers > 0:

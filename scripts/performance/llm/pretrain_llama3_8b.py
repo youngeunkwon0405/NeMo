@@ -41,6 +41,7 @@ def override_recipe_configs(
     vp_size: int,
     ep_size: int,
     enable_cuda_graphs: bool,
+    use_mcore_fsdp: bool,
 ):
     """
     llama3 8b pre-train recipe aimed at achieving best possible performance and faster
@@ -65,6 +66,9 @@ def override_recipe_configs(
         enable_cuda_graphs=enable_cuda_graphs,
         compute_dtype=args.compute_dtype,
         fp8_recipe=args.fp8_recipe,
+        use_mcore_fsdp=use_mcore_fsdp,
+        use_user_buffer_registration=args.use_user_buffer_registration,
+        use_sharp=args.use_sharp,
         nccl_communicator_config_path=args.nccl_communicator_config_path,
     )
     recipe = set_exp_logging_configs(
@@ -82,14 +86,21 @@ if __name__ == "__main__":
     args_sanity_check(args)
 
     kwargs = get_user_configs(args.gpu.lower(), "pre_train", "llama3", "8b", args)
-    num_nodes, mbs, gbs, tp_size, pp_size, cp_size, vp_size, ep_size, _, enable_cuda_graphs = kwargs[:10]
+    num_nodes, mbs, gbs, tp_size, pp_size, cp_size, vp_size, ep_size, _, enable_cuda_graphs, use_mcore_fsdp = kwargs[:11]
 
     recipe = override_recipe_configs(
-        args, num_nodes, mbs, gbs, tp_size, pp_size, cp_size, vp_size, ep_size, enable_cuda_graphs
+        args, num_nodes, mbs, gbs, tp_size, pp_size, cp_size, vp_size, ep_size, enable_cuda_graphs, use_mcore_fsdp
     )
 
-    exp_config = f"{num_nodes}nodes_tp{tp_size}_pp{pp_size}_cp{cp_size}_vp{vp_size}_{mbs}mbs_{gbs}gbs"
+    exp_config = f"NCCLLOG_{num_nodes}nodes_tp{tp_size}_pp{pp_size}_cp{cp_size}_vp{vp_size}_mbs{mbs}_gbs{gbs}_fsdp{use_mcore_fsdp}_ubr{args.use_user_buffer_registration}_sharp{args.use_sharp}"
     exp_name = f"{splitext(basename(__file__))[0]}_{args.compute_dtype}_{exp_config}"
+
+    custom_srun_args =["--network=sharp"] if args.use_sharp else []
+    custom_env_vars = {"NCCL_NVLS_ENABLE": "1", "NCCL_CTA_POLICY": "1"} if args.use_user_buffer_registration else {}
+    # Temporary setting for debugging
+    custom_env_vars |= {"NCCL_DEBUG": "INFO", "NCCL_DEBUG_SUBSYS": "TUNING"}
+
+    print(f"recipe: {recipe}")
 
     executor = slurm_executor(
         args.account,
@@ -100,7 +111,8 @@ if __name__ == "__main__":
         args.time_limit,
         args.container_image,
         custom_mounts=args.custom_mounts,
-        custom_env_vars={},
+        custom_env_vars=custom_env_vars,
+        custom_srun_args=custom_srun_args,
         hf_token=args.hf_token,
         nemo_home=args.nemo_home,
         wandb_key=args.wandb_key,
