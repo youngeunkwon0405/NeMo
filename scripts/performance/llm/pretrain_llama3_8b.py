@@ -92,8 +92,8 @@ if __name__ == "__main__":
         args, num_nodes, mbs, gbs, tp_size, pp_size, cp_size, vp_size, ep_size, enable_cuda_graphs, use_mcore_fsdp
     )
 
-    exp_config = f"NCCLLOG_{num_nodes}nodes_tp{tp_size}_pp{pp_size}_cp{cp_size}_vp{vp_size}_mbs{mbs}_gbs{gbs}_fsdp{use_mcore_fsdp}_ubr{args.use_user_buffer_registration}_sharp{args.use_sharp}"
-    exp_name = f"{splitext(basename(__file__))[0]}_{args.compute_dtype}_{exp_config}"
+    exp_config = f"{num_nodes}nodes_tp{tp_size}_pp{pp_size}_cp{cp_size}_vp{vp_size}_mbs{mbs}_gbs{gbs}_recomp{recompute_layers}_fsdp{use_mcore_fsdp}_ubr{args.use_user_buffer_registration}_sharp{args.use_sharp}"
+    exp_name = f"YK_{splitext(basename(__file__))[0]}_{args.compute_dtype}_{exp_config}"
 
     custom_srun_args =["--network=sharp"] if args.use_sharp else []
     custom_env_vars = {"NCCL_NVLS_ENABLE": "1", "NCCL_CTA_POLICY": "1"} if args.use_user_buffer_registration else {}
