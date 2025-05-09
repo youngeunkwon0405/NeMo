@@ -163,7 +163,6 @@ if __name__ == "__main__":
     exp_name = f"EXP_SEG_{splitext(basename(__file__))[0]}_{args.compute_dtype}_{exp_config}"
 
     custom_env_vars = {"NCCL_NVLS_ENABLE": "1", "NCCL_CTA_POLICY": "1"} if args.use_user_buffer_registration else {}
-    # Temporary setting for debugging
     custom_env_vars |= {"NCCL_DEBUG": "INFO", "NCCL_DEBUG_SUBSYS": "TUNING", "PYTORCH_CUDA_ALLOC_CONF": "expandable_segments:True"}
 
     # print(f"recipe: {recipe}")
@@ -181,7 +180,7 @@ if __name__ == "__main__":
         hf_token=args.hf_token,
         nemo_home=args.nemo_home,
         wandb_key=args.wandb_key,
-        network='sharp' if args.use_sharp else None
+        network='sharp' if args.use_sharp else None,
     )
 
     plugins = [
