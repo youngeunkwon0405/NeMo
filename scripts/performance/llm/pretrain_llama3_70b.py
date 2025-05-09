@@ -162,9 +162,7 @@ if __name__ == "__main__":
     exp_config = f"{num_nodes}nodes_tp{tp_size}_pp{pp_size}_cp{cp_size}_vp{vp_size}_mbs{mbs}_gbs{gbs}_recomp{recompute_layers}_fsdp{use_mcore_fsdp}_ubr{args.use_user_buffer_registration}_sharp{args.use_sharp}"
     exp_name = f"{splitext(basename(__file__))[0]}_{args.compute_dtype}_{exp_config}"
 
-    custom_srun_args =["--network=sharp"] if args.use_sharp else []
     custom_env_vars = {"NCCL_NVLS_ENABLE": "1", "NCCL_CTA_POLICY": "1"} if args.use_user_buffer_registration else {}
-    # Temporary setting for debugging
     custom_env_vars |= {"NCCL_DEBUG": "INFO", "NCCL_DEBUG_SUBSYS": "TUNING"}
 
     # print(f"recipe: {recipe}")
@@ -179,10 +177,10 @@ if __name__ == "__main__":
         args.container_image,
         custom_mounts=args.custom_mounts,
         custom_env_vars=custom_env_vars,
-        custom_srun_args=custom_srun_args,
         hf_token=args.hf_token,
         nemo_home=args.nemo_home,
         wandb_key=args.wandb_key,
+        network='sharp' if args.use_sharp else None,
     )
 
     plugins = [

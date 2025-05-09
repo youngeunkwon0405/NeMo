@@ -54,6 +54,7 @@ def slurm_executor(
     hf_token: str = None,
     nemo_home: str = DEFAULT_NEMO_HOME,
     wandb_key: str = None,
+    network: str = None,
 ) -> run.SlurmExecutor:
     """
     Slurm cluster definition with appropriate cluster params and NeMo container params needed for pre-training
@@ -119,6 +120,7 @@ def slurm_executor(
         exclusive=True,
         packager=run.GitArchivePackager(),
         segment=segment,
+        network=network,
     )
 
     return executor
