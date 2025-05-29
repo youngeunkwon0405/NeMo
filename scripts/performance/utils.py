@@ -394,6 +394,9 @@ def set_primary_perf_configs(
             recipe.trainer.plugins.first_last_layers_bf16 = False
         elif fp8_recipe.lower() == "mxfp8":
             recipe.trainer.plugins = bf16_with_mxfp8_mixed()
+            recipe.optim.config.mxfp8_param = True
+            recipe.trainer.strategy.ddp.mxfp8_param = True
+            # assert recipe.trainer.strategy.ddp.fp8_param_gather == True
         recipe.trainer.plugins.grad_reduce_in_fp32 = False
 
     # Activation recompute configs
