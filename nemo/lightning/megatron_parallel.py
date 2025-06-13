@@ -73,6 +73,56 @@ if TYPE_CHECKING:
     import lightning.pytorch as pl
 
 
+def print_function_source(func):
+    """
+    Intelligently inspects and prints the source code of a function object.
+
+    Handles regular functions, wrapped functions, and callable class instances.
+    Only prints on the specified rank.
+    """
+
+    print("\n" + "=" * 80)
+    print(f"DEBUG: Source Code Analysis for `{getattr(func, '__name__', 'unknown function')}`")
+    print("=" * 80)
+
+    func_to_inspect = func
+    print(f"Initial object type: {type(func_to_inspect)}")
+
+    print("\nAttempting to get source code directly...")
+    try:
+        source_code = inspect.getsource(func_to_inspect)
+        print("Source code found:")
+        print("-" * 20 + " SOURCE " + "-" * 20)
+        print(source_code)
+        print("-" * 48)
+    except (TypeError, OSError) as e:
+        print(f"Direct source inspection failed: {e}")
+        print("\nFalling back to manual source code retrieval from file.")
+
+        if hasattr(func_to_inspect, '__code__') and hasattr(
+            func_to_inspect.__code__, 'co_filename'
+        ) and hasattr(func_to_inspect.__code__, 'co_firstlineno'):
+            filename = func_to_inspect.__code__.co_filename
+            lineno = func_to_inspect.__code__.co_firstlineno
+            print(f"Found function definition in: {filename}:{lineno}")
+
+            try:
+                with open(filename, 'r') as f:
+                    source_lines = f.readlines()
+
+                # Use inspect.getblock to smartly find the block of code
+                function_block_lines = inspect.getblock(source_lines[lineno - 1 :])
+
+                print("-" * 20 + " SOURCE (from file) " + "-" * 20)
+                print("".join(function_block_lines))
+                print("-" * 60)
+
+            except Exception as read_e:
+                print(f"Could not read or parse source from file: {read_e}")
+        else:
+            print("Could not find `__code__` object with file info. Cannot locate source file.")
+
+    print("=" * 80 + "\n")
 @runtime_checkable
 class PrecisionPluginProtocol(Protocol[DataT]):
     def convert_input(self, data: DataT) -> DataT: ...
@@ -531,6 +581,14 @@ class MegatronParallel(nn.ModuleList, Generic[ModelT]):
         """
         from megatron.core import parallel_state
 
+        # print('----------forward_step----------------------')
+        # print_function_source(forward_step)
+        # print('-----------data_step---------------------')
+        # print_function_source(data_step)
+        # print('-----------loss_reduction---------------------')
+        # print_function_source(loss_reduction)
+        # print('--------------------------------')
+
         @functools.wraps(forward_step)
         def wrapped_forward_step_func(dataloader_iter, model):
             if isinstance(data_step, _ModuleStepFunction):
@@ -877,7 +935,8 @@ class _ModuleStepFunction:
     def from_loss_reduction(cls, module: "pl.LightningModule", step_type: str) -> Optional["_ModuleStepFunction"]:
         for fn_name in [f"{step_type}_loss_reduction", "loss_reduction"]:
             if hasattr(module, fn_name):
-                return _ModuleStepFunction(fn_name, is_property=True)
+                return _ModuleStepFunction(fn_name)
+                # return _ModuleStepFunction(fn_name, is_property=True)
 
         return None
 

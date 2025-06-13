@@ -56,6 +56,8 @@ class _CommOverlapConfig:
     # Pipeline bubble overlap
     defer_embedding_wgrad_compute: bool = None
     wgrad_deferral_limit: int = None
+    # EP A2A overlap
+    overlap_moe_expert_parallel_comm: bool = None
 
 
 class MegatronCommOverlapCallback(Callback):
@@ -100,6 +102,7 @@ class MegatronCommOverlapCallback(Callback):
         bucket_size: int = None,
         defer_embedding_wgrad_compute: bool = None,
         wgrad_deferral_limit: int = None,
+        overlap_moe_expert_parallel_comm: bool = None,
     ):
 
         self.user_comm_overlap_cfg = _CommOverlapConfig(
@@ -115,6 +118,7 @@ class MegatronCommOverlapCallback(Callback):
             bucket_size=bucket_size,
             defer_embedding_wgrad_compute=defer_embedding_wgrad_compute,
             wgrad_deferral_limit=wgrad_deferral_limit,
+            overlap_moe_expert_parallel_comm=overlap_moe_expert_parallel_comm,
         )
 
         self.tp_comm_overlap_cfg = None
@@ -137,6 +141,7 @@ class MegatronCommOverlapCallback(Callback):
         comm_overlap_cfg.tp_comm_bootstrap_backend = None
         comm_overlap_cfg.defer_embedding_wgrad_compute = False
         comm_overlap_cfg.wgrad_deferral_limit = -1
+        comm_overlap_cfg.overlap_moe_expert_parallel_comm = False
 
         # Check if TP overlap can be safely enabled
         if self.user_comm_overlap_cfg.tp_comm_overlap is True:
@@ -255,6 +260,15 @@ class MegatronCommOverlapCallback(Callback):
                         but get {os.environ.get('CUDA_DEVICE_MAX_CONNECTIONS', None)}"
                     )
 
+    def _check_overlap_moe_expert_parallel_comm_config(self):
+        if self.user_comm_overlap_cfg.overlap_moe_expert_parallel_comm:
+            import os
+            
+            logging.info(f"[DEV] Checking combined 1f1b configs - self.user_comm_overlap_cfg:{self.user_comm_overlap_cfg}")
+
+            assert self.user_comm_overlap_cfg.overlap_grad_reduce == False, "Combined 1F1B: Grad reduce must be disabled"
+            assert os.environ.get('CUDA_DEVICE_MAX_CONNECTIONS', None) == "32", "Combined 1F1B: DEEP_EP_SM_NUMS must be set"
+
     def setup(self, trainer: pl.Trainer, pl_module: pl.LightningModule, stage: str) -> None:
         """Apply configs set in comm_overlap_cfg on trainer config."""
         assert isinstance(trainer.strategy, MegatronStrategy), "MegatronCommOverlapCallback requires MegatronStrategy"
@@ -270,6 +284,10 @@ class MegatronCommOverlapCallback(Callback):
                 self.tp_comm_overlap_cfg = comm_overlap_cfg.tp_comm_overlap_cfg
                 self.tp_comm_bootstrap_backend = comm_overlap_cfg.tp_comm_bootstrap_backend
                 self.need_tp_overlap_ub_init = True
+            
+            if trainer.model.config.overlap_moe_expert_parallel_comm:
+                trainer.model.config.overlap_moe_expert_parallel_comm = comm_overlap_cfg.overlap_moe_expert_parallel_comm
+                logging.info(f"[DEV] setup - Setting model configs!\n")
 
         # Data parallel overlap is only available with the Megatron DDP and Distributed optimizer
         if (
@@ -286,6 +304,11 @@ class MegatronCommOverlapCallback(Callback):
 
         # setup cuda device max connections
         self._check_num_cuda_device_max_connections()
+
+        # check overlap_moe_expert_parallel_comm config
+        self._check_overlap_moe_expert_parallel_comm_config()
+
+        logging.info(f"[DEV] setup - trainer.model.config:{trainer.model.config}")
 
     def _init_te_userbuffers(self, model_parallel_cfg: ModelParallelConfig):
         from megatron.core import parallel_state

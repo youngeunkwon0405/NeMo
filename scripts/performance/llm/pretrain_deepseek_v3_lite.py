@@ -82,7 +82,9 @@ def override_recipe_configs(
         gc_interval_train=60,
         gc_interval_val=60,
     )
+    # TODO: modify the recipe to use a2a overlap
     if args.use_ep_a2a_overlap:
+        print(f"\n[DEV] Using ep_a2a overlap\n")
         comm_overlap_callback = run.Config(
             MegatronCommOverlapCallback,
             tp_comm_overlap=False,
@@ -95,6 +97,7 @@ def override_recipe_configs(
             MegatronCommOverlapCallback,
             tp_comm_overlap=False,
         )
+
     callbacks.extend([garbage_collection_callback, comm_overlap_callback])
     recipe.trainer.callbacks.extend(callbacks)
 
@@ -181,6 +184,13 @@ if __name__ == "__main__":
         activation_offload_layers,
         recompute_modules,
     )
+
+    # Lite config
+    recipe.model.config.hidden_size = 2048
+    recipe.model.config.ffn_hidden_size = 2048
+    recipe.model.config.num_moe_experts = 16
+
+    print(f"Final recipe:\n {recipe}")
 
     exp_config = f"{num_nodes}nodes_tp{tp_size}_pp{pp_size}_cp{cp_size}_vp{vp_size}_ep{ep_size}_{mbs}mbs_{gbs}gbs"
     exp_name = f"{splitext(basename(__file__))[0]}_{args.compute_dtype}_{exp_config}"
