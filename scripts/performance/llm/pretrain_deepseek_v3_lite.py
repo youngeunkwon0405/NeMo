@@ -82,10 +82,21 @@ def override_recipe_configs(
         gc_interval_train=60,
         gc_interval_val=60,
     )
+    # TODO: modify the recipe to use a2a overlap
     comm_overlap_callback = run.Config(
         MegatronCommOverlapCallback,
         tp_comm_overlap=False,
     )
+    # TODO: modify the recipe to use a2a overlap
+    # comm_overlap_callback = run.Config(
+    #     MegatronCommOverlapCallback,
+    #     tp_comm_overlap=False,
+    #     overlap_grad_reduce=False,
+    #     overlap_param_gather=False,
+    #     combined_1f1b=True,
+    #     combined_1f1b_recipe='ep_a2a',
+    # )
+
     callbacks.extend([garbage_collection_callback, comm_overlap_callback])
     recipe.trainer.callbacks.extend(callbacks)
 
@@ -181,6 +192,8 @@ if __name__ == "__main__":
 
     exp_config = f"{num_nodes}nodes_tp{tp_size}_pp{pp_size}_cp{cp_size}_vp{vp_size}_ep{ep_size}_{mbs}mbs_{gbs}gbs"
     exp_name = f"{splitext(basename(__file__))[0]}_{args.compute_dtype}_{exp_config}"
+
+    # Required env var settings for a2a overlap
     custom_env_vars = {
         "CUDA_DEVICE_MAX_CONNECTIONS": "32",
         "DEEP_EP_SM_NUMS": "20",
