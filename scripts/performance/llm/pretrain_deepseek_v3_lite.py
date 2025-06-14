@@ -84,6 +84,7 @@ def override_recipe_configs(
     )
     # TODO: modify the recipe to use a2a overlap
     if args.use_ep_a2a_overlap:
+        print(f"\n[DEV] Using ep_a2a overlap\n")
         comm_overlap_callback = run.Config(
             MegatronCommOverlapCallback,
             tp_comm_overlap=False,

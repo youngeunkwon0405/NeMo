@@ -289,6 +289,11 @@ class MegatronCommOverlapCallback(Callback):
                 self.tp_comm_overlap_cfg = comm_overlap_cfg.tp_comm_overlap_cfg
                 self.tp_comm_bootstrap_backend = comm_overlap_cfg.tp_comm_bootstrap_backend
                 self.need_tp_overlap_ub_init = True
+            
+            if trainer.model.config.combined_1f1b:
+                trainer.model.config.combined_1f1b = comm_overlap_cfg.combined_1f1b_cfg
+                trainer.model.config.combined_1f1b_recipe = comm_overlap_cfg.combined_1f1b_recipe
+                logging.info(f"[DEV] setup - Setting model configs!\n")
 
         # Data parallel overlap is only available with the Megatron DDP and Distributed optimizer
         if (
@@ -308,6 +313,8 @@ class MegatronCommOverlapCallback(Callback):
 
         # check combined 1f1b config
         self._check_combined_1f1b_config()
+
+        logging.info(f"[DEV] setup - trainer.model.config:{trainer.model.config}")
 
     def _init_te_userbuffers(self, model_parallel_cfg: ModelParallelConfig):
         from megatron.core import parallel_state
