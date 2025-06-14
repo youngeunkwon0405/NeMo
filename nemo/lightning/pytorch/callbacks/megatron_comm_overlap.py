@@ -291,7 +291,7 @@ class MegatronCommOverlapCallback(Callback):
                 self.need_tp_overlap_ub_init = True
             
             if trainer.model.config.combined_1f1b:
-                trainer.model.config.combined_1f1b = comm_overlap_cfg.combined_1f1b_cfg
+                trainer.model.config.combined_1f1b = comm_overlap_cfg.combined_1f1b
                 trainer.model.config.combined_1f1b_recipe = comm_overlap_cfg.combined_1f1b_recipe
                 logging.info(f"[DEV] setup - Setting model configs!\n")
 
