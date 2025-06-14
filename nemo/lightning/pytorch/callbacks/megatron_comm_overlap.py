@@ -56,6 +56,9 @@ class _CommOverlapConfig:
     # Pipeline bubble overlap
     defer_embedding_wgrad_compute: bool = None
     wgrad_deferral_limit: int = None
+    # Combined 1F1B
+    combined_1f1b: bool = None
+    combined_1f1b_recipe: str = None
 
 
 class MegatronCommOverlapCallback(Callback):
@@ -100,6 +103,8 @@ class MegatronCommOverlapCallback(Callback):
         bucket_size: int = None,
         defer_embedding_wgrad_compute: bool = None,
         wgrad_deferral_limit: int = None,
+        combined_1f1b: bool = None,
+        combined_1f1b_recipe: str = None,
     ):
 
         self.user_comm_overlap_cfg = _CommOverlapConfig(
@@ -115,6 +120,8 @@ class MegatronCommOverlapCallback(Callback):
             bucket_size=bucket_size,
             defer_embedding_wgrad_compute=defer_embedding_wgrad_compute,
             wgrad_deferral_limit=wgrad_deferral_limit,
+            combined_1f1b=combined_1f1b,
+            combined_1f1b_recipe=combined_1f1b_recipe,
         )
 
         self.tp_comm_overlap_cfg = None
@@ -137,6 +144,8 @@ class MegatronCommOverlapCallback(Callback):
         comm_overlap_cfg.tp_comm_bootstrap_backend = None
         comm_overlap_cfg.defer_embedding_wgrad_compute = False
         comm_overlap_cfg.wgrad_deferral_limit = -1
+        comm_overlap_cfg.combined_1f1b = False
+        comm_overlap_cfg.combined_1f1b_recipe = None
 
         # Check if TP overlap can be safely enabled
         if self.user_comm_overlap_cfg.tp_comm_overlap is True:
@@ -255,6 +264,16 @@ class MegatronCommOverlapCallback(Callback):
                         but get {os.environ.get('CUDA_DEVICE_MAX_CONNECTIONS', None)}"
                     )
 
+    def _check_combined_1f1b_config(self):
+        if self.user_comm_overlap_cfg.combined_1f1b:
+            import os
+            
+            logging.info(f"[DEV] Checking combined 1f1b configs - self.user_comm_overlap_cfg:{self.user_comm_overlap_cfg}")
+
+            assert self.user_comm_overlap_cfg.combined_1f1b_recipe == 'ep_a2a', "Combined 1F1B: Only ep_a2a recipe is supported"
+            assert self.user_comm_overlap_cfg.overlap_grad_reduce == False, "Combined 1F1B: Grad reduce must be disabled"
+            assert os.environ.get('CUDA_DEVICE_MAX_CONNECTIONS', None) == "32", "Combined 1F1B: DEEP_EP_SM_NUMS must be set"
+
     def setup(self, trainer: pl.Trainer, pl_module: pl.LightningModule, stage: str) -> None:
         """Apply configs set in comm_overlap_cfg on trainer config."""
         assert isinstance(trainer.strategy, MegatronStrategy), "MegatronCommOverlapCallback requires MegatronStrategy"
@@ -286,6 +305,9 @@ class MegatronCommOverlapCallback(Callback):
 
         # setup cuda device max connections
         self._check_num_cuda_device_max_connections()
+
+        # check combined 1f1b config
+        self._check_combined_1f1b_config()
 
     def _init_te_userbuffers(self, model_parallel_cfg: ModelParallelConfig):
         from megatron.core import parallel_state

@@ -326,5 +326,13 @@ def parse_cli_args():
         required=False,
         default=[],
     )
+    parser.add_argument(
+        "-epa2a",
+        "--use_ep_a2a_overlap",
+        help="Enable a2a overlap. Disabled by default",
+        type=bool_arg,
+        required=False,
+        default=None,
+    )
 
     return parser

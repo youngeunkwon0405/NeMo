@@ -83,19 +83,20 @@ def override_recipe_configs(
         gc_interval_val=60,
     )
     # TODO: modify the recipe to use a2a overlap
-    comm_overlap_callback = run.Config(
-        MegatronCommOverlapCallback,
-        tp_comm_overlap=False,
-    )
-    # TODO: modify the recipe to use a2a overlap
-    # comm_overlap_callback = run.Config(
-    #     MegatronCommOverlapCallback,
-    #     tp_comm_overlap=False,
-    #     overlap_grad_reduce=False,
-    #     overlap_param_gather=False,
-    #     combined_1f1b=True,
-    #     combined_1f1b_recipe='ep_a2a',
-    # )
+    if args.use_ep_a2a_overlap:
+        comm_overlap_callback = run.Config(
+            MegatronCommOverlapCallback,
+            tp_comm_overlap=False,
+            overlap_grad_reduce=False,
+            overlap_param_gather=False,
+            combined_1f1b=True,
+            combined_1f1b_recipe='ep_a2a',
+        )
+    else:
+        comm_overlap_callback = run.Config(
+            MegatronCommOverlapCallback,
+            tp_comm_overlap=False,
+        )
 
     callbacks.extend([garbage_collection_callback, comm_overlap_callback])
     recipe.trainer.callbacks.extend(callbacks)

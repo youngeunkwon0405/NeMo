@@ -82,10 +82,20 @@ def override_recipe_configs(
         gc_interval_train=60,
         gc_interval_val=60,
     )
-    comm_overlap_callback = run.Config(
-        MegatronCommOverlapCallback,
-        tp_comm_overlap=False,
-    )
+    if args.use_ep_a2a_overlap:
+        comm_overlap_callback = run.Config(
+            MegatronCommOverlapCallback,
+            tp_comm_overlap=False,
+            overlap_grad_reduce=False,
+            overlap_param_gather=False,
+            combined_1f1b=True,
+            combined_1f1b_recipe='ep_a2a',
+        )
+    else:
+        comm_overlap_callback = run.Config(
+            MegatronCommOverlapCallback,
+            tp_comm_overlap=False,
+        )
     callbacks.extend([garbage_collection_callback, comm_overlap_callback])
     recipe.trainer.callbacks.extend(callbacks)
 
@@ -176,6 +186,14 @@ if __name__ == "__main__":
     exp_config = f"{num_nodes}nodes_tp{tp_size}_pp{pp_size}_cp{cp_size}_vp{vp_size}_ep{ep_size}_{mbs}mbs_{gbs}gbs"
     exp_name = f"{splitext(basename(__file__))[0]}_{args.compute_dtype}_{exp_config}"
 
+    # Required env var settings for a2a overlap
+    custom_env_vars = {
+        "CUDA_DEVICE_MAX_CONNECTIONS": "32",
+        "DEEP_EP_SM_NUMS": "20",
+        "NVTE_FWD_LAYERNORM_SM_MARGIN": "24",
+        "NVTE_BWD_LAYERNORM_SM_MARGIN": "24",
+    }
+
     executor = slurm_executor(
         args.account,
         args.partition,
@@ -185,7 +203,7 @@ if __name__ == "__main__":
         args.time_limit,
         args.container_image,
         custom_mounts=args.custom_mounts,
-        custom_env_vars={},
+        custom_env_vars=custom_env_vars,
         hf_token=args.hf_token,
         nemo_home=args.nemo_home,
         wandb_key=args.wandb_key,
