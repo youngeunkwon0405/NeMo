@@ -581,13 +581,13 @@ class MegatronParallel(nn.ModuleList, Generic[ModelT]):
         """
         from megatron.core import parallel_state
 
-        print('----------forward_step----------------------')
-        print_function_source(forward_step)
-        print('-----------data_step---------------------')
-        print_function_source(data_step)
-        print('-----------loss_reduction---------------------')
-        print_function_source(loss_reduction)
-        print('--------------------------------')
+        # print('----------forward_step----------------------')
+        # print_function_source(forward_step)
+        # print('-----------data_step---------------------')
+        # print_function_source(data_step)
+        # print('-----------loss_reduction---------------------')
+        # print_function_source(loss_reduction)
+        # print('--------------------------------')
 
         @functools.wraps(forward_step)
         def wrapped_forward_step_func(dataloader_iter, model):
@@ -935,7 +935,8 @@ class _ModuleStepFunction:
     def from_loss_reduction(cls, module: "pl.LightningModule", step_type: str) -> Optional["_ModuleStepFunction"]:
         for fn_name in [f"{step_type}_loss_reduction", "loss_reduction"]:
             if hasattr(module, fn_name):
-                return _ModuleStepFunction(fn_name, is_property=True)
+                return _ModuleStepFunction(fn_name)
+                # return _ModuleStepFunction(fn_name, is_property=True)
 
         return None
 
