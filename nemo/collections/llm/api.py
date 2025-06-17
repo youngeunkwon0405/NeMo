@@ -1169,6 +1169,16 @@ def _setup(
     if resume is not None:
         resume.setup(trainer, model)
 
+    print("*-*-*-*-*-*-*-*-*-*-*-*-*")
+    print(f"model: {model}")
+    print(f"data: {data}")
+    print(f"trainer: {trainer}")
+    print(f"log: {log}")
+    print(f"resume: {resume}")
+    print(f"optim: {optim}")
+    print(f"tokenizer: {tokenizer}")
+    print(f"model_transform: {model_transform}")
+    print("*-*-*-*-*-*-*-*-*-*-*-*-*")
     if optim:
         optim.connect(model)
     if tokenizer:  # TODO: Improve this
