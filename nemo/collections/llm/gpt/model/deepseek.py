@@ -174,14 +174,14 @@ class DeepSeekV3Config(DeepSeekConfig):
     DeepSeek-V3 Model: https://github.com/deepseek-ai/DeepSeek-V3
     """
 
-    num_layers: int = 61
+    num_layers: int = 64
     hidden_size: int = 7168
     ffn_hidden_size: int = 18432
     num_moe_experts: int = 256
     moe_ffn_hidden_size: int = 2048
     moe_shared_expert_intermediate_size: int = 2048  # 2048 * 1 shared expert
     moe_layer_freq: Union[int, List[int]] = field(
-        default_factory=lambda: [0] * 3 + [1] * 58
+        default_factory=lambda: [0] * 3 + [1] * 61
     )  # first three layers are dense
     moe_router_topk: int = 8
     moe_router_num_groups: int = 8
