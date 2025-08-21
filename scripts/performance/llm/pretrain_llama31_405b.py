@@ -138,7 +138,7 @@ if __name__ == "__main__":
     args = parse_cli_args().parse_args()
     args_sanity_check(args)
 
-    kwargs = get_user_configs(args.gpu.lower(), "pre_train", "llama31", "405b", args)
+    kwargs = get_user_configs(args.gpu.lower(), "pre_train", "llama31", "405b", args) 
     (
         num_nodes,
         mbs,
@@ -153,7 +153,11 @@ if __name__ == "__main__":
         use_mcore_fsdp,
         recompute_layers,
         activation_offload_layers,
-    ) = kwargs[:13]
+        recompute_modules,
+        keep_fsdp_fp8_transpose_cache,
+        use_user_buffer_registration,
+        use_sharp,
+    ) = kwargs[:17]
 
     recipe = override_recipe_configs(
         args,
@@ -176,7 +180,7 @@ if __name__ == "__main__":
 
     if use_mcore_fsdp:
         # Needed to enable CuDNN LN for FSDP overlap
-        env_vars = {"NVTE_NORM_FWD_USE_CUDNN": "1", "NVTE_NORM_BWD_USE_CUDNN": "1"}
+        env_vars = {"NVTE_NORM_FWD_USE_CUDNN": "1", "NVTE_NORM_BWD_USE_CUDNN": "1", "NCCL_DEBUG":"INFO","NCCL_DEBUG_SUBSYS":"ENV,TUNING"}
     else:
         env_vars = {}
 
