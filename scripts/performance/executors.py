@@ -102,7 +102,7 @@ def slurm_executor(
 
     # add --segment flag to sbatch if job uses GB200 and goes beyond one rack.
     segment = None
-    if num_gpus_per_node == 4 and nodes > 18:
+    if num_gpus_per_node == 4 and nodes > 1:
         for segment_candidate in range(18, 0, -1):
             if nodes % segment_candidate == 0:
                 segment = segment_candidate
