@@ -14,7 +14,6 @@
 
 import atexit
 import functools
-import gc
 import inspect
 import logging as _logging
 import os
@@ -49,6 +48,7 @@ from lightning.fabric.utilities.seed import reset_seed
 from lightning.pytorch.accelerators import CPUAccelerator
 from lightning.pytorch.loops import _AutomaticOptimization, evaluation_loop, fit_loop, prediction_loop
 from lightning.pytorch.loops.fetchers import _DataLoaderIterDataFetcher
+from lightning.pytorch.plugins.io.wrapper import _WrappingCheckpointIO
 from lightning.pytorch.strategies.ddp import DDPStrategy
 from lightning.pytorch.trainer.states import RunningStage, TrainerFn
 from lightning.pytorch.utilities.types import STEP_OUTPUT
@@ -56,7 +56,6 @@ from megatron.core import Timers
 from megatron.core.dist_checkpointing.validation import StrictHandling
 from megatron.core.distributed import DistributedDataParallelConfig
 from megatron.core.optimizer import OptimizerConfig
-from megatron.training.training import cuda_graph_capture, cuda_graph_set_manual_hooks
 from torch import nn
 from torch.distributed.algorithms.ddp_comm_hooks.debugging_hooks import noop_hook
 from torch.distributed.checkpoint.utils import CheckpointException
@@ -574,10 +573,6 @@ class MegatronStrategy(DDPStrategy, io.IOMixin):
         """Setups dist env"""
         setup_parallel_ranks(self)
 
-        # Capture the external cudagraph on a side stream
-        if hasattr(self.model, 'config') and getattr(self.model.config, 'external_cuda_graph', False):
-            torch.cuda.set_stream(torch.cuda.Stream())
-
         # Implementation from superclass copied below in order to pass the store to the process group init
         reset_seed()
         self.set_world_ranks()
@@ -721,39 +716,22 @@ class MegatronStrategy(DDPStrategy, io.IOMixin):
         _optimizers_to_device(self.optimizers, self.root_device)
 
     @override
+    def on_validation_end(self) -> None:
+        "Runs after validation loop"
+        for model_chunk in self.model:
+            model_chunk.train()
+
+    @override
+    def on_test_end(self) -> None:
+        "Runs after test loop"
+        for model_chunk in self.model:
+            model_chunk.train()
+
+    @override
     def training_step(self, dataloader_iter, *args: Any, **kwargs: Any) -> STEP_OUTPUT:
         """Runs one training step"""
         assert self.lightning_module is not None
         assert isinstance(self.model, MegatronParallel)
-
-        # Capture the external cuda graph for the first step
-        if (
-            self.trainer.global_step == 0
-            and hasattr(self.model, 'config')
-            and getattr(self.model.config, 'external_cuda_graph', False)
-        ):
-            # disable the prehook
-            if self.ddp_config.use_distributed_optimizer and self.ddp_config.overlap_param_gather:
-                self.model.disable_forward_pre_hook()
-                param_sync_func = self.model.config.param_sync_func
-                self.model.config.param_sync_func = None
-            import argparse
-
-            partial_cg_args = argparse.Namespace()
-            partial_cg_args.position_embedding_type = self.model.config.position_embedding_type
-            partial_cg_args.seq_length = self.trainer.datamodule.seq_length
-            partial_cg_args.micro_batch_size = self.trainer.datamodule.micro_batch_size
-            cuda_graph_capture(self.model, self.model.config, partial_cg_args)
-
-            # Set grad to zero.
-            for model_chunk in self.model:
-                model_chunk.zero_grad_buffer()
-            for opt in self.optimizers:
-                opt.zero_grad()
-
-            # Collect garbage and empty unused memory.
-            gc.collect()
-            torch.cuda.empty_cache()
 
         with self.precision_plugin.train_step_context():  # TODO: Do we need this?
             # Set grad to zero.
@@ -774,18 +752,6 @@ class MegatronStrategy(DDPStrategy, io.IOMixin):
                     raise ValueError(f"Expected 'loss' in output dict, got {out.keys()}")
 
                 reduced_train_loss = out["loss"]
-
-            if (
-                self.trainer.global_step == 0
-                and hasattr(self.model, 'config')
-                and getattr(self.model.config, 'external_cuda_graph', False)
-            ):
-                if self.ddp_config.use_distributed_optimizer and self.ddp_config.overlap_param_gather:
-                    # enable the prehook
-                    self.model.enable_forward_pre_hook()
-                    self.model.config.param_sync_func = param_sync_func
-                    param_sync_func = None
-                    cuda_graph_set_manual_hooks(self.model)
 
             self.lightning_module.log(
                 "global_step",
@@ -926,10 +892,18 @@ class MegatronStrategy(DDPStrategy, io.IOMixin):
 
         return kwargs
 
-    def optimizer_sharded_state_dict(self, is_loading=False):
+    def optimizer_sharded_state_dict(self, is_loading: bool = False, metadata: Optional[dict] = None):
         """
         Sharded state dictionary for an MainParamsOptimizerWrapper.
         Used to save and load the optimizer state when training with distributed_checkpoint.
+
+        Args:
+            is_loading (bool, optional): set to True if the sharded state dict is intended
+                for checkpoint loading (as opposed to saving). Defaults to False.
+            metadata (dict, optional): sharded state dict metadata passed from the framework.
+                Used to control the details of sharded state dict creation, in particular
+                the state dict format of the DistributedOptimizer with the flag
+                `distrib_optim_sharding_type`. Defaults to None (empty metadata).
 
         Returns
         -------
@@ -940,10 +914,20 @@ class MegatronStrategy(DDPStrategy, io.IOMixin):
         # TODO: Fix when MainParamsOptimizerWrapper is not used
 
         optimizer = self.lightning_module.optimizers(use_pl_optimizer=False)
-        sharding_type = "fully_sharded_model_space" if self.parallel_save_optim else "dp_zero_gather_scatter"
+        if metadata is None:
+            metadata = self.sharded_state_dict_metadata
+            logging.debug(
+                f'No sharded_state_dict metadata passed for the optimizer,'
+                f' using metadata for checkpoint save: {metadata}'
+            )
+        else:
+            logging.debug(f'Using passed sharded_state_dict metadata in the optimizer: {metadata}')
 
         return _strategy_lib.optimizer_sharded_state_dict(
-            self.megatron_parallel, optimizer, is_loading=is_loading, sharding_type=sharding_type
+            self.megatron_parallel,
+            optimizer,
+            is_loading=is_loading,
+            metadata=metadata,
         )
 
     @override
@@ -976,6 +960,9 @@ class MegatronStrategy(DDPStrategy, io.IOMixin):
             if self.ckpt_save_optimizer:
                 checkpoint["optimizer"] = [self.optimizer_sharded_state_dict()]
 
+        if not storage_options:
+            storage_options = {}
+        storage_options['content_metadata'] = self.sharded_state_dict_metadata
         self.checkpoint_io.save_checkpoint(checkpoint, filepath, storage_options=storage_options)
 
         # Save ModelOpt state too, if it exists.
@@ -1007,13 +994,16 @@ class MegatronStrategy(DDPStrategy, io.IOMixin):
             sharded_state_context = nullcontext
 
         # After dist_checkpointing.load, sharded tensors will be replaced with tensors
+        sharded_sd_metadata = self.unwrapped_checkpoint_io.load_content_metadata(checkpoint_path)
         sharded_state_dict = {}
         with sharded_state_context():
-            sharded_state_dict["state_dict"] = self.megatron_parallel.sharded_state_dict()
+            sharded_state_dict["state_dict"] = self.megatron_parallel.sharded_state_dict(metadata=sharded_sd_metadata)
 
         if restore_optimizers and self.trainer.state.fn == TrainerFn.FITTING:
             if self.lightning_module.optimizers(use_pl_optimizer=False):
-                sharded_state_dict["optimizer"] = [self.optimizer_sharded_state_dict(is_loading=True)]
+                sharded_state_dict["optimizer"] = [
+                    self.optimizer_sharded_state_dict(is_loading=True, metadata=sharded_sd_metadata)
+                ]
 
         strict = (
             self.lightning_module.strict_loading if self.ckpt_load_strictness is None else self.ckpt_load_strictness
@@ -1035,6 +1025,17 @@ class MegatronStrategy(DDPStrategy, io.IOMixin):
             return final_checkpoint
 
         return checkpoint
+
+    @property
+    def sharded_state_dict_metadata(self):
+        """Metadata used for sharded_state_dict generation during checkpoint save."""
+        metadata = {}
+        if isinstance(self.ddp_config, DistributedDataParallelConfig) and self.ddp_config.use_distributed_optimizer:
+            if self.parallel_save_optim:
+                metadata["distrib_optim_sharding_type"] = "fully_sharded_model_space"
+            else:
+                metadata["distrib_optim_sharding_type"] = "dp_zero_gather_scatter"
+        return metadata
 
     def selective_restore(self) -> None:
         """Implements selective restoration of checkpoint"""
@@ -1135,6 +1136,14 @@ class MegatronStrategy(DDPStrategy, io.IOMixin):
     def checkpoint_io(self, io: CheckpointIO) -> None:
         """CheckpointIO setter"""
         self._checkpoint_io = io
+
+    @property
+    def unwrapped_checkpoint_io(self) -> CheckpointIO:
+        """Unwraps `checkpoint_io` from all wrappers."""
+        checkpoint_io = self.checkpoint_io
+        while isinstance(checkpoint_io, _WrappingCheckpointIO):
+            checkpoint_io = checkpoint_io.checkpoint_io
+        return checkpoint_io
 
     @property
     def current_epoch_step(self) -> int:
